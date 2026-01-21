@@ -2,3 +2,5 @@ node_modules/
 bin/
 obj/
 .env
+export.zip
+*.zip
