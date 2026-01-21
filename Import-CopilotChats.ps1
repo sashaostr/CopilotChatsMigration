@@ -249,7 +249,7 @@ if ($toMap.Count -gt 0) {
                 if ($_.Type -eq $item.Type) { $similarity += 50 }          # Same type = next
                 if ($_.Repo -eq $item.Repo) { $similarity += 25 }          # Same repo = bonus
                 
-                $_ | Add-Member -NotePropertyName Similarity -NotePropertyValue $similarity -PassThru
+                $_ | Add-Member -NotePropertyName Similarity -NotePropertyValue $similarity -Force -PassThru
             } |
             Sort-Object Similarity -Descending |
             Select-Object Project, Repo, Host, Type, Path, FolderPath
