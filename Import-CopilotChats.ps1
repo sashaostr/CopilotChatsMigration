@@ -5,9 +5,16 @@
 .DESCRIPTION
     Extracts the migration zip, matches exported workspaces to local ones,
     allows manual mapping for unmatched projects, and imports chat data.
+    
+    For mapped (non-exact) projects, file paths in chat sessions are updated
+    to point to the new workspace location.
 .NOTES
     Run this script on your NEW PC.
     Make sure VS Code is CLOSED before running this script.
+    
+    If chats appear but won't load ("ghost chats"), try using VS Code's
+    built-in "Chat: Import Chat..." command on individual JSON files
+    from %APPDATA%\Code\User\workspaceStorage\[hash]\chatSessions\
 #>
 
 [CmdletBinding()]
@@ -102,6 +109,52 @@ function Get-WorkspaceInfo {
         Path     = $pathPart
         Project  = $project
         Repo     = $repo
+    }
+}
+
+# Function to update paths in chat session JSON files
+function Update-ChatSessionPaths {
+    param(
+        [string]$SourceFolder,
+        [string]$DestFolder,
+        [string]$OldUri,
+        [string]$NewUri,
+        [switch]$DryRun
+    )
+    
+    $chatSessionsSource = Join-Path $SourceFolder 'chatSessions'
+    $chatSessionsDest = Join-Path $DestFolder 'chatSessions'
+    
+    if (-not (Test-Path $chatSessionsSource)) { return }
+    
+    if (-not (Test-Path $chatSessionsDest)) {
+        if (-not $DryRun) {
+            New-Item -ItemType Directory -Path $chatSessionsDest -Force | Out-Null
+        }
+    }
+    
+    # URI-encode the old and new URIs for replacement (handle both encoded and decoded forms)
+    $oldUriEncoded = [Uri]::EscapeDataString($OldUri)
+    $newUriEncoded = [Uri]::EscapeDataString($NewUri)
+    $oldUriDecoded = [Uri]::UnescapeDataString($OldUri)
+    $newUriDecoded = [Uri]::UnescapeDataString($NewUri)
+    
+    $jsonFiles = Get-ChildItem -Path $chatSessionsSource -Filter "*.json"
+    
+    foreach ($jsonFile in $jsonFiles) {
+        $content = Get-Content $jsonFile.FullName -Raw
+        
+        # Replace both encoded and decoded URI forms
+        $updatedContent = $content `
+            -replace [Regex]::Escape($oldUriEncoded), $newUriEncoded `
+            -replace [Regex]::Escape($oldUriDecoded), $newUriDecoded `
+            -replace [Regex]::Escape($OldUri), $NewUri
+        
+        $destFile = Join-Path $chatSessionsDest $jsonFile.Name
+        
+        if (-not $DryRun) {
+            $updatedContent | Set-Content -Path $destFile -NoNewline
+        }
     }
 }
 
@@ -334,11 +387,16 @@ foreach ($item in $toImport) {
     Write-Host "  [$($successCount + 1)/$($toImport.Count)] $($item.Project)..." -ForegroundColor Gray -NoNewline
     
     try {
+        # Check if this is an exact match or a mapped workspace
+        $localMatch = $localWorkspaces | Where-Object { $_.FolderPath -eq $item.TargetFolder }
+        $isExactMatch = $localMatch -and $localMatch.RawUri -eq $item.RawUri
+        
         if ($DryRun) {
-            Write-Host " [DRY RUN] Would copy to: $($item.TargetFolder)" -ForegroundColor Magenta
+            $mode = if ($isExactMatch) { "exact match" } else { "mapped - will update paths" }
+            Write-Host " [DRY RUN] Would copy to: $($item.TargetFolder) ($mode)" -ForegroundColor Magenta
         }
         else {
-            # Copy all files except workspace.json
+            # Copy all files except workspace.json and chatSessions folder
             $filesToCopy = Get-ChildItem -Path $item.ExportedFolder -File | 
                            Where-Object { $_.Name -ne 'workspace.json' }
             
@@ -346,14 +404,34 @@ foreach ($item in $toImport) {
                 Copy-Item -Path $file.FullName -Destination $item.TargetFolder -Force
             }
             
-            # Copy subdirectories (like chatSessions)
-            $subDirs = Get-ChildItem -Path $item.ExportedFolder -Directory
+            # Handle chatSessions specially for mapped workspaces
+            $chatSessionsSource = Join-Path $item.ExportedFolder 'chatSessions'
+            if (Test-Path $chatSessionsSource) {
+                if ($isExactMatch) {
+                    # Exact match: just copy directly
+                    $destSubDir = Join-Path $item.TargetFolder 'chatSessions'
+                    Copy-Item -Path $chatSessionsSource -Destination $destSubDir -Recurse -Force
+                }
+                else {
+                    # Mapped workspace: update paths in chat session JSON files
+                    Update-ChatSessionPaths `
+                        -SourceFolder $item.ExportedFolder `
+                        -DestFolder $item.TargetFolder `
+                        -OldUri $item.RawUri `
+                        -NewUri $localMatch.RawUri
+                }
+            }
+            
+            # Copy other subdirectories (not chatSessions)
+            $subDirs = Get-ChildItem -Path $item.ExportedFolder -Directory | 
+                       Where-Object { $_.Name -ne 'chatSessions' }
             foreach ($subDir in $subDirs) {
                 $destSubDir = Join-Path $item.TargetFolder $subDir.Name
                 Copy-Item -Path $subDir.FullName -Destination $destSubDir -Recurse -Force
             }
             
-            Write-Host " OK" -ForegroundColor Green
+            $mode = if ($isExactMatch) { "OK" } else { "OK (paths updated)" }
+            Write-Host " $mode" -ForegroundColor Green
         }
         
         $successCount++
@@ -386,4 +464,8 @@ else {
     Write-Host "  Skipped:  $skippedCount project(s)" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "You can now open VS Code and check your Copilot chat history!" -ForegroundColor Green
-}
+    Write-Host ""
+    Write-Host "TROUBLESHOOTING: If chats appear but won't load:" -ForegroundColor Yellow
+    Write-Host "  1. Open Command Palette (Ctrl+Shift+P)" -ForegroundColor Gray
+    Write-Host "  2. Run 'Chat: Import Chat...'" -ForegroundColor Gray
+    Write-Host "  3. Select JSON files from chatSessions folder" -ForegroundColor Gray

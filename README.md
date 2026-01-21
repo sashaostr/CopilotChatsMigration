@@ -10,6 +10,8 @@ VS Code stores Copilot chat history in `%APPDATA%\Code\User\workspaceStorage` in
 
 These scripts match workspaces by their **internal project path** (stored in `workspace.json`), not by folder hash.
 
+For **mapped** (non-exact) workspaces, the import script automatically updates file path references inside chat session JSON files so VS Code can properly load them.
+
 ## Scripts
 
 ### Export-CopilotChats.ps1 (Run on OLD PC)
@@ -32,7 +34,7 @@ These scripts match workspaces by their **internal project path** (stored in `wo
 2. Matches exported projects to local workspaces by exact path
 3. For unmatched: lets you manually pick a target (sorted by similarity)
 4. Shows summary and asks for confirmation
-5. Copies chat data into target folders
+5. Copies chat data into target folders (updates paths for mapped workspaces)
 
 ```powershell
 # Interactive - opens file picker
@@ -71,7 +73,29 @@ For unmatched projects, the import script shows all local workspaces sorted by s
 ## What Gets Copied
 
 - `state.vscdb` - Main chat history database
-- `chatSessions/` - Additional chat data
+- `chatSessions/` - Additional chat data (with path fixes for mapped workspaces)
 - Other workspace state files
 
 **Not copied:** `workspace.json` (kept from target to preserve local hash)
+
+## Troubleshooting
+
+### "Ghost Chats" - Chats appear but won't load when clicked
+
+This happens when the internal file references in chat sessions point to paths that don't exist on the new machine. The updated import script should handle this automatically for mapped workspaces.
+
+**If you still see ghost chats:**
+
+1. **Check Developer Tools** for the specific error:
+   - In VS Code: Help → Toggle Developer Tools → Console tab
+   - Click the ghost chat to see the error message
+
+2. **Use VS Code's built-in import** as a fallback:
+   - Open Command Palette (`Ctrl+Shift+P`)
+   - Run `Chat: Import Chat...`
+   - Navigate to `%APPDATA%\Code\User\workspaceStorage\[hash]\chatSessions`
+   - Select individual `.json` files to import
+
+3. **Read chats directly** as raw JSON:
+   - Open the `.json` files from `chatSessions` folder in VS Code
+   - Use `Ctrl+F` to search for your code snippets
