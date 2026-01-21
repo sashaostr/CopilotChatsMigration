@@ -469,3 +469,4 @@ else {
     Write-Host "  1. Open Command Palette (Ctrl+Shift+P)" -ForegroundColor Gray
     Write-Host "  2. Run 'Chat: Import Chat...'" -ForegroundColor Gray
     Write-Host "  3. Select JSON files from chatSessions folder" -ForegroundColor Gray
+}
