@@ -23,7 +23,8 @@ if (-not $OutputPath) {
     $saveDialog = [System.Windows.Forms.SaveFileDialog]::new()
     $saveDialog.Title = "Save Copilot Chat Export"
     $saveDialog.Filter = "ZIP files (*.zip)|*.zip"
-    $saveDialog.FileName = "VSCode_Chats_Migration.zip"
+    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    $saveDialog.FileName = "VSCode_Chats_Migration_$timestamp.zip"
     $saveDialog.InitialDirectory = [Environment]::GetFolderPath('Desktop')
     
     if ($saveDialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
